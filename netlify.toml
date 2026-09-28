@@ -1,0 +1,11 @@
+# Static one-page site: no build step, no functions.
+[build]
+  publish = "."
+
+# Forward /suno-api/* to the Suno API so the browser doesn't hit CORS limits.
+# The user's API key travels in the Authorization header; nothing is stored server-side.
+[[redirects]]
+  from = "/suno-api/*"
+  to = "https://api.sunoapi.org/:splat"
+  status = 200
+  force = true
