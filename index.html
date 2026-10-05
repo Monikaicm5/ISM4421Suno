@@ -22,6 +22,7 @@
     --radius: 12px;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body {
     margin: 0;
     background: var(--bg);
@@ -43,7 +44,7 @@
 
   label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
   label:first-child { margin-top: 0; }
-  input[type=text], input[type=password], input[type=number], textarea, select {
+  input[type=text], input[type=email], input[type=password], input[type=number], textarea, select {
     width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
     border-radius: 8px; padding: 10px 12px; font: inherit;
   }
@@ -117,13 +118,57 @@
   .lyrics-view { white-space: pre-wrap; font-size: 13px; color: var(--muted); background: var(--panel); padding: 10px; border-radius: 8px; margin-top: 8px; max-height: 220px; overflow: auto; }
 
   footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 32px; }
+
+  /* ---------- Auth ---------- */
+  .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .user-chip { font-size: 13px; color: var(--muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+  .auth-card { width: 100%; max-width: 400px; }
+  .auth-card h1 { text-align: center; margin-bottom: 4px; }
+  .auth-card .sub { text-align: center; color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .auth-links { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; }
+  .banner.ok { background: #13301f; border: 1px solid #1f4d2e; color: #bbf7d0; }
+  .loading { min-height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--muted); }
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="loading" id="loadingView"><span class="spinner"></span>Loading…</div>
+
+<!-- Login / sign up -->
+<div class="auth-wrap" id="authView" hidden>
+  <section class="card auth-card">
+    <h1>🎵 <span>Suno Studio</span></h1>
+    <p class="sub" id="authSub">Sign in to start making music</p>
+    <form id="authForm" autocomplete="on">
+      <div id="emailField">
+        <label for="authEmail">Email</label>
+        <input type="email" id="authEmail" autocomplete="email" required placeholder="you@example.com">
+      </div>
+      <div id="passwordField">
+        <label for="authPassword">Password</label>
+        <input type="password" id="authPassword" autocomplete="current-password" minlength="6" placeholder="At least 6 characters">
+      </div>
+      <button type="submit" class="primary" id="authSubmit">Sign in</button>
+    </form>
+    <div class="banner" id="authBanner"></div>
+    <div class="auth-links">
+      <button type="button" class="link" id="authSwitch">Don't have an account? Sign up</button>
+      <button type="button" class="link" id="authForgot">Forgot password?</button>
+    </div>
+    <div class="auth-links" id="resendRow" hidden>
+      <button type="button" class="link" id="authResend">Resend confirmation email</button>
+    </div>
+  </section>
+</div>
+
+<div class="wrap" id="appView" hidden>
   <header>
     <h1>🎵 <span>Suno Studio</span></h1>
-    <div class="credits" id="credits">Credits: <b>—</b></div>
+    <div class="header-right">
+      <div class="credits" id="credits">Credits: <b>—</b></div>
+      <span class="user-chip" id="userEmail"></span>
+      <button type="button" class="small" id="signOut">Sign out</button>
+    </div>
   </header>
 
   <!-- API key -->
@@ -235,6 +280,7 @@
   <footer>Powered by the <a href="https://docs.sunoapi.org" target="_blank" rel="noopener">Suno API</a>. Generated files are kept by Suno for 14 days — download the ones you like.</footer>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 (() => {
   'use strict';
@@ -248,6 +294,7 @@
   const CALLBACK_URL = 'https://example.com/suno-callback';
   const POLL_MS = 8000;
   const MAX_POLL_MS = 10 * 60 * 1000;
+  // Storage keys are scoped per signed-in user (see startApp).
   const LS = { key: 'suno.apiKey', jobs: 'suno.jobs' };
   const STYLE_PRESETS = ['Pop', 'Hip hop', 'Lo-fi', 'Rock', 'EDM', 'R&B', 'Jazz', 'Acoustic', 'Cinematic', 'Country', 'Reggaeton', 'Synthwave'];
   const VARIETY_LABELS = ['Off', 'Normal', 'High', 'Extra', 'Max'];
@@ -268,9 +315,9 @@
     del(k) { try { localStorage.removeItem(k); } catch {} },
   };
 
-  let apiKey = store.get(LS.key, '');
+  let apiKey = '';
   let mode = 'simple';
-  let jobs = store.get(LS.jobs, []);
+  let jobs = [];
 
   // ---------- API ----------
   async function api(path, { method = 'GET', body } = {}) {
@@ -323,7 +370,6 @@
     }
   }
 
-  $('apiKey').value = apiKey;
   $('toggleKey').onclick = () => {
     const input = $('apiKey');
     input.type = input.type === 'password' ? 'text' : 'password';
@@ -630,11 +676,190 @@
     renderJobs();
   };
 
-  // ---------- Init ----------
-  setMode('simple');
-  renderJobs();
-  refreshCredits();
-  jobs.filter(j => PENDING.includes(j.status)).forEach(pollJob);
+  // ---------- Init (runs after sign-in) ----------
+  let started = false;
+  window.startApp = (user) => {
+    if (started) return;
+    started = true;
+    LS.key = `suno.${user.id}.apiKey`;
+    LS.jobs = `suno.${user.id}.jobs`;
+    apiKey = store.get(LS.key, '');
+    jobs = store.get(LS.jobs, []);
+    $('apiKey').value = apiKey;
+    setMode('simple');
+    renderJobs();
+    refreshCredits();
+    jobs.filter(j => PENDING.includes(j.status)).forEach(pollJob);
+  };
+})();
+</script>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- Supabase email auth ----------
+  // Public project URL + publishable key: safe to ship in the browser.
+  const SUPABASE_URL = 'https://oyffhrvjiyzkmkoahkvx.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_gEm0GmFP06Pr7RoCKX7Zdw_ZW_s3m45';
+
+  const $ = (id) => document.getElementById(id);
+  const show = (view) => {
+    $('loadingView').hidden = view !== 'loading';
+    $('authView').hidden = view !== 'auth';
+    $('appView').hidden = view !== 'app';
+  };
+  const banner = (msg, type = 'err') => {
+    const el = $('authBanner');
+    el.className = `banner ${type}${msg ? ' show' : ''}`;
+    el.textContent = msg || '';
+  };
+
+  if (!window.supabase) {
+    show('auth');
+    banner('Could not load the login service. Check your connection and refresh.');
+    $('authSubmit').disabled = true;
+    return;
+  }
+
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  // Where confirmation / reset emails send people back to (this page).
+  const redirectTo = location.protocol.startsWith('http') ? location.origin + location.pathname : undefined;
+
+  // Modes: signin | signup | forgot | reset (set a new password after a reset email)
+  let mode = 'signin';
+  const COPY = {
+    signin: { sub: 'Sign in to start making music', btn: 'Sign in', sw: "Don't have an account? Sign up" },
+    signup: { sub: 'Create an account with your email', btn: 'Create account', sw: 'Already have an account? Sign in' },
+    forgot: { sub: "Enter your email and we'll send a reset link", btn: 'Send reset link', sw: 'Back to sign in' },
+    reset:  { sub: 'Choose a new password', btn: 'Update password', sw: 'Back to sign in' },
+  };
+
+  function setMode(m) {
+    mode = m;
+    const c = COPY[m];
+    $('authSub').textContent = c.sub;
+    $('authSubmit').textContent = c.btn;
+    $('authSwitch').textContent = c.sw;
+    $('emailField').hidden = m === 'reset';
+    $('authEmail').required = m !== 'reset';
+    $('passwordField').hidden = m === 'forgot';
+    $('authPassword').required = m !== 'forgot';
+    $('authPassword').autocomplete = m === 'signin' ? 'current-password' : 'new-password';
+    $('authPassword').placeholder = m === 'reset' ? 'New password (6+ characters)' : 'At least 6 characters';
+    $('authForgot').hidden = m !== 'signin';
+    $('resendRow').hidden = true;
+    banner('');
+  }
+
+  $('authSwitch').onclick = () => setMode(mode === 'signin' ? 'signup' : 'signin');
+  $('authForgot').onclick = () => setMode('forgot');
+
+  function friendly(err) {
+    const msg = err?.message || String(err);
+    if (/invalid login credentials/i.test(msg)) return 'Wrong email or password.';
+    if (/email not confirmed/i.test(msg)) { $('resendRow').hidden = false; return 'Please confirm your email first — check your inbox (and spam folder).'; }
+    if (/already registered/i.test(msg)) return 'That email already has an account. Try signing in.';
+    if (/rate limit/i.test(msg)) return 'Too many attempts. Please wait a minute and try again.';
+    return msg;
+  }
+
+  $('authForm').onsubmit = async (e) => {
+    e.preventDefault();
+    banner('');
+    const email = $('authEmail').value.trim();
+    const password = $('authPassword').value;
+    const btn = $('authSubmit');
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.innerHTML = '<span class="spinner"></span>Please wait…';
+    try {
+      if (mode === 'signin') {
+        const { error } = await sb.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      } else if (mode === 'signup') {
+        const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: redirectTo } });
+        if (error) throw error;
+        // With email confirmation on, no session is returned until the link is clicked.
+        if (!data.session) {
+          if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+            throw new Error('That email already has an account. Try signing in.');
+          }
+          setMode('signin');
+          $('authEmail').value = email;
+          banner('Check your email for a confirmation link, then come back and sign in.', 'ok');
+          $('resendRow').hidden = false;
+        }
+      } else if (mode === 'forgot') {
+        const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo });
+        if (error) throw error;
+        banner('If that email has an account, a reset link is on its way.', 'ok');
+      } else if (mode === 'reset') {
+        const { error } = await sb.auth.updateUser({ password });
+        if (error) throw error;
+        $('authPassword').value = '';
+        recovering = false;
+        history.replaceState(null, '', location.pathname);
+        const { data } = await sb.auth.getSession();
+        if (data.session) enterApp(data.session.user);
+      }
+    } catch (err) {
+      banner(friendly(err));
+    } finally {
+      btn.disabled = false;
+      if (btn.textContent === 'Please wait…') btn.textContent = label;
+    }
+  };
+
+  $('authResend').onclick = async () => {
+    const email = $('authEmail').value.trim();
+    if (!email) { banner('Enter your email above first.'); return; }
+    const { error } = await sb.auth.resend({ type: 'signup', email, options: { emailRedirectTo: redirectTo } });
+    banner(error ? friendly(error) : 'Confirmation email sent again. Check your inbox.', error ? 'err' : 'ok');
+  };
+
+  $('signOut').onclick = async () => {
+    await sb.auth.signOut();
+    // Reload to fully reset the app (stops polling, clears in-memory key).
+    location.replace(location.pathname);
+  };
+
+  function enterApp(user) {
+    $('userEmail').textContent = user.email || '';
+    $('userEmail').title = user.email || '';
+    show('app');
+    window.startApp(user);
+  }
+
+  // A password-reset email link lands here with type=recovery in the URL.
+  let recovering = new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
+  sb.auth.onAuthStateChange((event, session) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      recovering = true;
+      show('auth');
+      setMode('reset');
+      return;
+    }
+    if (recovering && event !== 'SIGNED_OUT') { show('auth'); setMode('reset'); return; }
+    if (session?.user) {
+      // Defer so we don't call into Supabase from inside its own callback.
+      setTimeout(() => { if (!recovering) enterApp(session.user); }, 0);
+    } else if (event === 'SIGNED_OUT' || event === 'INITIAL_SESSION') {
+      show('auth');
+    }
+  });
+
+  // Surface errors from email links (e.g. expired confirmation / reset link).
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const query = new URLSearchParams(location.search);
+  const linkError = hash.get('error_description') || query.get('error_description');
+  if (linkError) {
+    show('auth');
+    banner(`${linkError.replace(/\+/g, ' ')}. Please try again.`);
+    history.replaceState(null, '', location.pathname);
+  }
+
+  setMode('signin');
 })();
 </script>
 </body>

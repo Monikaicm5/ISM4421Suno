@@ -4,6 +4,7 @@ A single-page AI music generator built on the [Suno API](https://docs.sunoapi.or
 Each user pastes their own Suno API key — nothing secret lives in the code.
 
 ## Features
+- **Email login** (Supabase Auth) – sign up, sign in, forgot/reset password, sign out. The app is only usable when signed in.
 - **API key box** – stored only in the user's browser (optional), with live credit balance
 - **Simple mode** – describe a song, Suno writes lyrics and music
 - **Custom mode** – title, your own lyrics, style, excluded styles, vocal gender, duration, style/weirdness/variety controls
@@ -16,6 +17,14 @@ Each user pastes their own Suno API key — nothing secret lives in the code.
 Drag-and-drop this folder into Netlify, or connect the repo. No build command is needed —
 `netlify.toml` publishes the root folder and adds a simple rewrite (`/suno-api/*` → `https://api.sunoapi.org/*`)
 so browsers don't run into CORS. No serverless functions are involved.
+
+## Supabase setup (one time)
+The app uses the Supabase project `oyffhrvjiyzkmkoahkvx`; its public URL and publishable key are in `index.html`
+(both are safe to ship in a browser). In the Supabase dashboard go to **Authentication → URL Configuration** and:
+1. Set **Site URL** to your Netlify URL (e.g. `https://your-site.netlify.app`).
+2. Add the same URL to **Redirect URLs**.
+
+Without this, confirmation and password-reset emails send people to `localhost`.
 
 ## Run locally
 Open `index.html` directly, or serve the folder (`npx serve .`). Off Netlify, the app calls
