@@ -121,13 +121,29 @@
 
   /* ---------- Auth ---------- */
   .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .user-chip { font-size: 13px; color: var(--muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
   .auth-card { width: 100%; max-width: 400px; }
   .auth-card h1 { text-align: center; margin-bottom: 4px; }
   .auth-card .sub { text-align: center; color: var(--muted); font-size: 14px; margin: 0 0 18px; }
   .auth-links { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; }
   .banner.ok { background: #13301f; border: 1px solid #1f4d2e; color: #bbf7d0; }
+  /* ---------- Profile ---------- */
+  .profile-btn { display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 4px; border-radius: 999px; max-width: 240px; }
+  .profile-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .avatar.lg { width: 84px; height: 84px; font-size: 32px; }
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 0; width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+  dialog::backdrop { background: rgba(0, 0, 0, .6); }
+  .dialog-body { padding: 20px; overflow: auto; }
+  .dialog-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .dialog-head h2 { margin: 0; font-size: 18px; }
+  .avatar-row { display: flex; align-items: center; gap: 16px; margin: 12px 0 4px; flex-wrap: wrap; }
+  .avatar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip.fav { border-color: var(--accent); color: var(--text); }
+  .dialog-foot { display: flex; gap: 10px; margin-top: 18px; }
+  .dialog-foot button { flex: 1; margin-top: 0; }
+  input:disabled { opacity: .6; }
   .loading { min-height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--muted); }
 </style>
 </head>
@@ -166,7 +182,9 @@
     <h1>🎵 <span>Suno Studio</span></h1>
     <div class="header-right">
       <div class="credits" id="credits">Credits: <b>—</b></div>
-      <span class="user-chip" id="userEmail"></span>
+      <button type="button" class="profile-btn" id="profileBtn" title="Edit profile">
+        <span class="avatar" id="headerAvatar"></span><span id="headerName"></span>
+      </button>
       <button type="button" class="small" id="signOut">Sign out</button>
     </div>
   </header>
@@ -279,6 +297,51 @@
 
   <footer>Powered by the <a href="https://docs.sunoapi.org" target="_blank" rel="noopener">Suno API</a>. Generated files are kept by Suno for 14 days — download the ones you like.</footer>
 </div>
+
+<!-- Profile editor -->
+<dialog id="profileDialog">
+  <form class="dialog-body" id="profileForm" method="dialog" autocomplete="off">
+    <div class="dialog-head">
+      <h2 id="profileTitle">Your profile</h2>
+      <button type="button" class="small" id="profileClose" aria-label="Close">✕</button>
+    </div>
+    <p class="hint" id="profileIntro" hidden>Welcome! Tell us a bit about yourself. You can change this any time.</p>
+
+    <div class="avatar-row">
+      <span class="avatar lg" id="profileAvatar"></span>
+      <div>
+        <div class="avatar-actions">
+          <button type="button" class="small" id="avatarPick">Upload photo</button>
+          <button type="button" class="small" id="avatarRemove">Remove</button>
+        </div>
+        <div class="hint">JPG, PNG, WEBP or GIF, up to 2 MB.</div>
+        <input type="file" id="avatarFile" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+      </div>
+    </div>
+
+    <label for="pfDisplayName">Display name <span class="counter" id="pfDisplayNameCount">0 / 60</span></label>
+    <input type="text" id="pfDisplayName" maxlength="60" placeholder="Your name">
+
+    <label for="pfUsername">Username</label>
+    <input type="text" id="pfUsername" maxlength="30" placeholder="letters, numbers, underscores" pattern="[A-Za-z0-9_]{3,30}" title="3–30 letters, numbers or underscores">
+
+    <label for="pfBio">Bio <span class="counter" id="pfBioCount">0 / 500</span></label>
+    <textarea id="pfBio" maxlength="500" rows="3" placeholder="What kind of music do you make?"></textarea>
+
+    <label>Favorite genres <span class="counter" id="pfGenreCount">0 / 12</span></label>
+    <div class="chips" id="pfGenres"></div>
+    <div class="hint">Your favorites are highlighted in the style picker.</div>
+
+    <label for="pfEmail">Email</label>
+    <input type="email" id="pfEmail" disabled>
+
+    <div class="banner" id="profileBanner"></div>
+    <div class="dialog-foot">
+      <button type="button" id="profileCancel">Cancel</button>
+      <button type="submit" class="primary" id="profileSave">Save profile</button>
+    </div>
+  </form>
+</dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
@@ -416,18 +479,27 @@
       update();
     });
 
-  STYLE_PRESETS.forEach(s => {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'chip';
-    chip.textContent = s;
-    chip.onclick = () => {
-      const cur = $('style').value.trim();
-      $('style').value = cur ? `${cur}, ${s.toLowerCase()}` : s.toLowerCase();
-      $('style').dispatchEvent(new Event('input'));
-    };
-    $('styleChips').appendChild(chip);
-  });
+  function renderStyleChips(favorites = []) {
+    const favs = favorites.filter(f => STYLE_PRESETS.includes(f));
+    const ordered = [...favs, ...STYLE_PRESETS.filter(s => !favs.includes(s))];
+    $('styleChips').innerHTML = '';
+    ordered.forEach(s => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = favs.includes(s) ? 'chip fav' : 'chip';
+      chip.textContent = favs.includes(s) ? `★ ${s}` : s;
+      chip.onclick = () => {
+        const cur = $('style').value.trim();
+        $('style').value = cur ? `${cur}, ${s.toLowerCase()}` : s.toLowerCase();
+        $('style').dispatchEvent(new Event('input'));
+      };
+      $('styleChips').appendChild(chip);
+    });
+  }
+  renderStyleChips();
+  // Called by the profile code once the user's favorite genres are known.
+  window.setFavoriteGenres = renderStyleChips;
+  window.STYLE_PRESETS = STYLE_PRESETS;
 
   document.querySelectorAll('.slider input').forEach(r => {
     const out = r.nextElementSibling;
@@ -825,11 +897,209 @@
   };
 
   function enterApp(user) {
-    $('userEmail').textContent = user.email || '';
-    $('userEmail').title = user.email || '';
     show('app');
     window.startApp(user);
+    loadProfile(user);
   }
+
+  // ---------- Profiles (public.profiles + avatars bucket) ----------
+  const AVATAR_MAX = 2 * 1024 * 1024;
+  const MAX_GENRES = 12;
+  let currentUser = null;
+  let profile = null;
+  let draft = null;          // edits in progress inside the dialog
+  let profileLoading = false;
+
+  const initials = (p, email) => ((p?.display_name || p?.username || email || '?').trim()[0] || '?').toUpperCase();
+
+  function paintAvatar(el, url, p) {
+    el.textContent = '';
+    el.style.backgroundImage = '';
+    if (url) {
+      const img = new Image();
+      img.alt = '';
+      img.className = el.className;
+      img.id = el.id;
+      img.src = url;
+      img.onerror = () => { const span = document.createElement('span'); span.className = img.className; span.id = img.id; span.textContent = initials(p, currentUser?.email); img.replaceWith(span); };
+      el.replaceWith(img);
+    } else if (el.tagName === 'IMG') {
+      const span = document.createElement('span');
+      span.className = el.className; span.id = el.id;
+      span.textContent = initials(p, currentUser?.email);
+      el.replaceWith(span);
+    } else {
+      el.textContent = initials(p, currentUser?.email);
+    }
+  }
+
+  function renderHeader() {
+    const name = profile?.display_name || (profile?.username ? `@${profile.username}` : currentUser?.email || '');
+    $('headerName').textContent = name;
+    $('profileBtn').title = `${currentUser?.email || ''} — edit profile`;
+    paintAvatar($('headerAvatar'), profile?.avatar_url, profile);
+  }
+
+  async function loadProfile(user) {
+    if (profileLoading || currentUser?.id === user.id && profile) return;
+    profileLoading = true;
+    currentUser = user;
+    renderHeader();
+    try {
+      let { data, error } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+      if (error) throw error;
+      if (!data) {
+        // Normally created by a database trigger at sign-up; create it if missing.
+        ({ data, error } = await sb.from('profiles').insert({ id: user.id }).select().single());
+        if (error) throw error;
+      }
+      profile = data;
+      renderHeader();
+      window.setFavoriteGenres(profile.favorite_genres || []);
+      // First visit: invite the user to fill in their profile.
+      if (!profile.display_name && !profile.username) openProfile(true);
+    } catch (err) {
+      console.error('Could not load profile', err);
+    } finally {
+      profileLoading = false;
+    }
+  }
+
+  function profileBanner(msg, type = 'err') {
+    const el = $('profileBanner');
+    el.className = `banner ${type}${msg ? ' show' : ''}`;
+    el.textContent = msg || '';
+  }
+
+  function renderGenreChips() {
+    const root = $('pfGenres');
+    root.innerHTML = '';
+    window.STYLE_PRESETS.forEach(g => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = draft.favorite_genres.includes(g) ? 'chip on' : 'chip';
+      chip.textContent = g;
+      chip.onclick = () => {
+        const list = draft.favorite_genres;
+        if (list.includes(g)) draft.favorite_genres = list.filter(x => x !== g);
+        else if (list.length < MAX_GENRES) draft.favorite_genres = [...list, g];
+        renderGenreChips();
+      };
+      root.appendChild(chip);
+    });
+    $('pfGenreCount').textContent = `${draft.favorite_genres.length} / ${MAX_GENRES}`;
+  }
+
+  function updateCounters() {
+    $('pfDisplayNameCount').textContent = `${$('pfDisplayName').value.length} / 60`;
+    $('pfBioCount').textContent = `${$('pfBio').value.length} / 500`;
+  }
+  $('pfDisplayName').addEventListener('input', updateCounters);
+  $('pfBio').addEventListener('input', updateCounters);
+
+  function openProfile(firstTime = false) {
+    if (!currentUser) return;
+    const p = profile || {};
+    draft = { avatar_url: p.avatar_url || null, avatarFile: null, favorite_genres: [...(p.favorite_genres || [])] };
+    $('profileTitle').textContent = firstTime ? 'Set up your profile' : 'Your profile';
+    $('profileIntro').hidden = !firstTime;
+    $('profileCancel').textContent = firstTime ? 'Later' : 'Cancel';
+    $('pfDisplayName').value = p.display_name || '';
+    $('pfUsername').value = p.username || '';
+    $('pfBio').value = p.bio || '';
+    $('pfEmail').value = currentUser.email || '';
+    updateCounters();
+    renderGenreChips();
+    paintAvatar($('profileAvatar'), draft.avatar_url, p);
+    $('avatarRemove').hidden = !draft.avatar_url;
+    profileBanner('');
+    $('profileDialog').showModal();
+  }
+
+  const closeProfile = () => {
+    const pv = $('profileAvatar');
+    if (pv.src && pv.src.startsWith('blob:')) URL.revokeObjectURL(pv.src);
+    $('profileDialog').close();
+  };
+  $('profileBtn').onclick = () => openProfile(false);
+  $('profileClose').onclick = closeProfile;
+  $('profileCancel').onclick = closeProfile;
+
+  $('avatarPick').onclick = () => $('avatarFile').click();
+  $('avatarFile').onchange = () => {
+    const file = $('avatarFile').files[0];
+    $('avatarFile').value = '';
+    if (!file) return;
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) { profileBanner('Please choose a JPG, PNG, WEBP or GIF image.'); return; }
+    if (file.size > AVATAR_MAX) { profileBanner('That image is over 2 MB. Please pick a smaller one.'); return; }
+    profileBanner('');
+    draft.avatarFile = file;
+    paintAvatar($('profileAvatar'), URL.createObjectURL(file), profile);
+    $('avatarRemove').hidden = false;
+  };
+  $('avatarRemove').onclick = () => {
+    draft.avatarFile = null;
+    draft.avatar_url = null;
+    paintAvatar($('profileAvatar'), null, profile);
+    $('avatarRemove').hidden = true;
+  };
+
+  async function uploadAvatar(file) {
+    const ext = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' })[file.type];
+    const path = `${currentUser.id}/avatar.${ext}`;
+    const { error } = await sb.storage.from('avatars').upload(path, file, { upsert: true, contentType: file.type, cacheControl: '3600' });
+    if (error) throw error;
+    const { data } = sb.storage.from('avatars').getPublicUrl(path);
+    // Cache-bust so the new photo shows immediately.
+    return `${data.publicUrl}?v=${Date.now()}`;
+  }
+
+  async function removeOldAvatars(keepUrl) {
+    const { data: files } = await sb.storage.from('avatars').list(currentUser.id);
+    const stale = (files || []).map(f => `${currentUser.id}/${f.name}`).filter(path => !keepUrl || !keepUrl.includes(`/${path}?`));
+    if (stale.length) await sb.storage.from('avatars').remove(stale);
+  }
+
+  $('profileForm').onsubmit = async (e) => {
+    e.preventDefault();
+    profileBanner('');
+    const username = $('pfUsername').value.trim();
+    if (username && !/^[A-Za-z0-9_]{3,30}$/.test(username)) {
+      profileBanner('Username must be 3–30 letters, numbers or underscores.');
+      return;
+    }
+    const btn = $('profileSave');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Saving…';
+    try {
+      let avatarUrl = draft.avatar_url;
+      if (draft.avatarFile) avatarUrl = await uploadAvatar(draft.avatarFile);
+      const updates = {
+        display_name: $('pfDisplayName').value.trim() || null,
+        username: username || null,
+        bio: $('pfBio').value.trim() || null,
+        avatar_url: avatarUrl,
+        favorite_genres: draft.favorite_genres,
+      };
+      const { data, error } = await sb.from('profiles').update(updates).eq('id', currentUser.id).select().single();
+      if (error) throw error;
+      const hadAvatar = profile?.avatar_url;
+      profile = data;
+      // Clean up a replaced or removed photo (best effort).
+      if (hadAvatar && hadAvatar !== avatarUrl) removeOldAvatars(avatarUrl).catch(() => {});
+      renderHeader();
+      window.setFavoriteGenres(profile.favorite_genres || []);
+      closeProfile();
+    } catch (err) {
+      const msg = err?.code === '23505' ? 'That username is already taken. Try another one.'
+        : err?.code === '23514' ? 'Some fields are invalid. Check the username and lengths.'
+        : (err?.message || 'Could not save your profile.');
+      profileBanner(msg);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save profile';
+    }
+  };
 
   // A password-reset email link lands here with type=recovery in the URL.
   let recovering = new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';

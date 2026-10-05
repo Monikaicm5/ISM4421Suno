@@ -5,6 +5,7 @@ Each user pastes their own Suno API key — nothing secret lives in the code.
 
 ## Features
 - **Email login** (Supabase Auth) – sign up, sign in, forgot/reset password, sign out. The app is only usable when signed in.
+- **User profiles** – display name, unique username, bio, profile photo and favorite genres (highlighted in the style picker). New users are prompted to set one up on first sign-in.
 - **API key box** – stored only in the user's browser (optional), with live credit balance
 - **Simple mode** – describe a song, Suno writes lyrics and music
 - **Custom mode** – title, your own lyrics, style, excluded styles, vocal gender, duration, style/weirdness/variety controls
@@ -25,6 +26,12 @@ The app uses the Supabase project `oyffhrvjiyzkmkoahkvx`; its public URL and pub
 2. Add the same URL to **Redirect URLs**.
 
 Without this, confirmation and password-reset emails send people to `localhost`.
+
+### Database
+Profiles live in `public.profiles` (one row per user, created automatically at sign-up) with Row Level
+Security so each user can only read and edit their own row. Profile photos go in the public `avatars`
+storage bucket, where users can only write to their own folder. The SQL is in
+`supabase/migrations/` and has already been applied to the project.
 
 ## Run locally
 Open `index.html` directly, or serve the folder (`npx serve .`). Off Netlify, the app calls
